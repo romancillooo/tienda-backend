@@ -18,17 +18,13 @@ const productsRouter = require('./routes/products');
 const brandsRouter = require('./routes/brands');
 const categoriesRouter = require('./routes/categories');
 const statisticsRouter = require('./routes/statistics');
-// const colorsRouter = require('./routes/colors');
-// const productColorsRouter = require('./routes/productColors');
-// const productGalleryRouter = require('./routes/productGallery');
+const colorsRouter = require('./routes/colors');
 
 app.use('/api/products', productsRouter);
 app.use('/api/brands', brandsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/statistics', statisticsRouter);
-// app.use('/api/colors', colorsRouter);
-// app.use('/api/productColors', productColorsRouter);
-// app.use('/api/productGallery', productGalleryRouter);
+app.use('/api/colors', colorsRouter);
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
