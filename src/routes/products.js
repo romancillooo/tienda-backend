@@ -35,15 +35,12 @@ const galleryImageStorage = multer.diskStorage({
   }
 });
 
-const productImageUpload = multer({ storage: productImageStorage });
-const galleryImageUpload = multer({ storage: galleryImageStorage });
-
 const upload = multer({
   storage: multer.diskStorage({
     destination: function (req, file, cb) {
-      if (file.fieldname === "image") {
+      if (file.fieldname === 'image') {
         cb(null, path.join(__dirname, '../../uploads/products-images'));
-      } else if (file.fieldname === "galleryImages") {
+      } else if (file.fieldname.startsWith('galleryImages_')) {
         cb(null, path.join(__dirname, '../../uploads/product-gallery-images'));
       }
     },
@@ -51,13 +48,24 @@ const upload = multer({
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       cb(null, uniqueSuffix + path.extname(file.originalname));
     }
-  })
+  }),
+  limits: {
+    fieldSize: 25 * 1024 * 1024,
+    fileSize: 25 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.fieldname === 'image' || file.fieldname.startsWith('galleryImages_')) {
+      cb(null, true);
+    } else {
+      cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
+    }
+  }
 });
 
+router.post('/', upload.any(), productsController.createProduct);
+router.put('/:id', upload.any(), productsController.updateProduct);
 router.get('/', productsController.getProducts);
 router.get('/:id', productsController.getProductById);
-router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'galleryImages', maxCount: 10 }]), productsController.createProduct);
-router.put('/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'galleryImages', maxCount: 10 }]), productsController.updateProduct);
 router.delete('/:id', productsController.deleteProduct);
 
 module.exports = router;
