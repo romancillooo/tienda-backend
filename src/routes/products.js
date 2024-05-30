@@ -62,6 +62,9 @@ const upload = multer({
   }
 });
 
+// Asegúrate de que esta ruta esté definida antes de las rutas que usan ':id'
+router.get('/latest', productsController.getLatestProducts);
+
 router.post('/', upload.any(), productsController.createProduct);
 router.put('/:id', upload.any(), productsController.updateProduct);
 router.get('/', productsController.getProducts);

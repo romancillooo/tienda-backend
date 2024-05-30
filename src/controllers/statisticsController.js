@@ -1,34 +1,23 @@
-const db = require('../db');
+const pool = require('../db');
 
-exports.getStatistics = (req, res) => {
+exports.getStatistics = async (req, res) => {
   const queries = {
-    brands: 'SELECT COUNT(*) AS count FROM brands',
-    categories: 'SELECT COUNT(*) AS count FROM categories',
-    products: 'SELECT COUNT(*) AS count FROM products'
+    brands: 'SELECT COUNT(*) as count FROM brands',
+    categories: 'SELECT COUNT(*) as count FROM categories',
+    products: 'SELECT COUNT(*) as count FROM products',
+    orders: 'SELECT COUNT(*) as count FROM orders',
+    notifications: 'SELECT COUNT(*) as count FROM notifications'
   };
 
   const statistics = {};
 
-  db.query(queries.brands, (err, results) => {
-    if (err) {
-      return res.status(500).send({ error: 'Error obteniendo estadísticas de marcas' });
+  try {
+    for (const key in queries) {
+      const [rows] = await pool.query(queries[key]);
+      statistics[key] = rows[0].count;
     }
-    statistics.brands = results[0].count;
-
-    db.query(queries.categories, (err, results) => {
-      if (err) {
-        return res.status(500).send({ error: 'Error obteniendo estadísticas de categorías' });
-      }
-      statistics.categories = results[0].count;
-
-      db.query(queries.products, (err, results) => {
-        if (err) {
-          return res.status(500).send({ error: 'Error obteniendo estadísticas de productos' });
-        }
-        statistics.products = results[0].count;
-
-        res.status(200).json(statistics);
-      });
-    });
-  });
+    res.status(200).json(statistics);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching statistics', details: error });
+  }
 };
