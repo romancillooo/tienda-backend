@@ -38,7 +38,7 @@ const galleryImageStorage = multer.diskStorage({
 const upload = multer({
   storage: multer.diskStorage({
     destination: function (req, file, cb) {
-      if (file.fieldname === 'image') {
+      if (file.fieldname === 'image' || file.fieldname === 'image2') {
         cb(null, path.join(__dirname, '../../uploads/products-images'));
       } else if (file.fieldname.startsWith('galleryImages_')) {
         cb(null, path.join(__dirname, '../../uploads/product-gallery-images'));
@@ -54,7 +54,7 @@ const upload = multer({
     fileSize: 25 * 1024 * 1024
   },
   fileFilter: (req, file, cb) => {
-    if (file.fieldname === 'image' || file.fieldname.startsWith('galleryImages_')) {
+    if (file.fieldname === 'image' || file.fieldname === 'image2' || file.fieldname.startsWith('galleryImages_')) {
       cb(null, true);
     } else {
       cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file.fieldname));
@@ -62,12 +62,12 @@ const upload = multer({
   }
 });
 
-// Asegúrate de que esta ruta esté definida antes de las rutas que usan ':id'
 router.get('/latest', productsController.getLatestProducts);
 
 router.post('/', upload.any(), productsController.createProduct);
 router.put('/:id', upload.any(), productsController.updateProduct);
 router.get('/', productsController.getProducts);
+router.get('/brand/:brandId', productsController.getProductsByBrand);
 router.get('/:id', productsController.getProductById);
 router.delete('/:id', productsController.deleteProduct);
 

@@ -27,11 +27,12 @@ exports.getBrandById = async (req, res) => {
 
 exports.createBrand = async (req, res) => {
   const { name, path } = req.body;
-  const image = req.file.filename; // Solo guarda el nombre del archivo
-  const query = 'INSERT INTO brands (name, image, path) VALUES (?, ?, ?)';
+  const image = req.files['image'] ? req.files['image'][0].filename : null;
+  const banner = req.files['banner'] ? req.files['banner'][0].filename : null;
+  const query = 'INSERT INTO brands (name, image, banner, path) VALUES (?, ?, ?, ?)';
   try {
-    const [results] = await pool.query(query, [name, image, path]);
-    res.status(201).json({ id: results.insertId, name, image, path });
+    const [results] = await pool.query(query, [name, image, banner, path]);
+    res.status(201).json({ id: results.insertId, name, image, banner, path });
   } catch (err) {
     res.status(500).send({ error: 'Error creando la marca' });
   }
@@ -40,14 +41,26 @@ exports.createBrand = async (req, res) => {
 exports.updateBrand = async (req, res) => {
   const brandId = req.params.id;
   const { name, path } = req.body;
-  const image = req.file ? req.file.filename : req.body.image; // Solo guarda el nombre del archivo si se ha subido uno nuevo
-  const query = 'UPDATE brands SET name = ?, image = ?, path = ? WHERE id = ?';
+
+  // Obtener la imagen y el banner actuales si no se proporciona una nueva imagen
+  let image = req.body.image;
+  let banner = req.body.banner;
+
+  if (req.files['image']) {
+    image = req.files['image'][0].filename;
+  }
+
+  if (req.files['banner']) {
+    banner = req.files['banner'][0].filename;
+  }
+
+  const query = 'UPDATE brands SET name = ?, image = ?, banner = ?, path = ? WHERE id = ?';
   try {
-    const [results] = await pool.query(query, [name, image, path, brandId]);
+    const [results] = await pool.query(query, [name, image, banner, path, brandId]);
     if (results.affectedRows === 0) {
       res.status(404).send({ error: 'Marca no encontrada' });
     } else {
-      res.status(200).json({ id: brandId, name, image, path });
+      res.status(200).json({ id: brandId, name, image, banner, path });
     }
   } catch (err) {
     res.status(500).send({ error: 'Error actualizando la marca' });
