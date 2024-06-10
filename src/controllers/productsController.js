@@ -98,7 +98,7 @@ exports.getProductById = async (req, res) => {
 };
 
 exports.createProduct = async (req, res) => {
-  const { brand_id, category_id, name, price, available_sizes } = req.body;
+  const { brand_id, category_id, name, price, available_sizes, description } = req.body;
   const image = req.files.find(file => file.fieldname === 'image');
   const image2 = req.files.find(file => file.fieldname === 'image2');
 
@@ -115,9 +115,9 @@ exports.createProduct = async (req, res) => {
     sizesArray = available_sizes.split(',').map(size => size.trim());
   }
 
-  const query = 'INSERT INTO products (brand_id, category_id, name, price, image, image2, available_sizes) VALUES (?, ?, ?, ?, ?, ?, ?)';
+  const query = 'INSERT INTO products (brand_id, category_id, name, price, image, image2, available_sizes, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
   try {
-    const [results] = await pool.query(query, [brand_id, category_id, name, price, image.filename, image2.filename, JSON.stringify(sizesArray)]);
+    const [results] = await pool.query(query, [brand_id, category_id, name, price, image.filename, image2.filename, JSON.stringify(sizesArray), (description)]);
     const productId = results.insertId;
 
     const colorQueries = colorsData.map(color => {
@@ -144,7 +144,7 @@ exports.createProduct = async (req, res) => {
     });
 
     await Promise.all(colorQueries);
-    res.status(201).json({ id: productId, brand_id, category_id, name, price, image: image.filename, image2: image2.filename, available_sizes: sizesArray });
+    res.status(201).json({ id: productId, brand_id, category_id, name, price, image: image.filename, image2: image2.filename, available_sizes: sizesArray, description });
   } catch (error) {
     console.error('Error creando el producto:', error);
     res.status(500).send({ error: 'Error creando el producto', details: error });
@@ -153,7 +153,7 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   const productId = req.params.id;
-  const { brand_id, category_id, name, price, available_sizes } = req.body;
+  const { brand_id, category_id, name, price, available_sizes, description } = req.body;
   const image = req.files.find(file => file.fieldname === 'image') || req.body.image;
   const image2 = req.files.find(file => file.fieldname === 'image2') || req.body.image2;
   const newGalleryImages = req.files.filter(file => file.fieldname.startsWith('galleryImages_')).map(file => file.filename);
@@ -177,9 +177,9 @@ exports.updateProduct = async (req, res) => {
     sizesArray = available_sizes.split(',').map(size => size.trim());
   }
 
-  const query = 'UPDATE products SET brand_id = ?, category_id = ?, name = ?, price = ?, image = ?, image2 = ?, available_sizes = ? WHERE id = ?';
+  const query = 'UPDATE products SET brand_id = ?, category_id = ?, name = ?, price = ?, image = ?, image2 = ?, available_sizes = ?, description = ? WHERE id = ?';
   try {
-    const [results] = await pool.query(query, [brand_id, category_id, name, price, typeof image === 'string' ? image : image.filename, typeof image2 === 'string' ? image2 : image2.filename, JSON.stringify(sizesArray), productId]);
+    const [results] = await pool.query(query, [brand_id, category_id, name, price, typeof image === 'string' ? image : image.filename, typeof image2 === 'string' ? image2 : image2.filename, JSON.stringify(sizesArray), description, productId]);
     if (results.affectedRows === 0) {
       return res.status(404).send({ error: 'Producto no encontrado' });
     }
@@ -225,7 +225,7 @@ exports.updateProduct = async (req, res) => {
     });
 
     await Promise.all(galleryQueries);
-    res.status(200).json({ id: productId, brand_id, category_id, name, price, image: typeof image === 'string' ? image : image.filename, image2: typeof image2 === 'string' ? image2 : image2.filename, available_sizes: sizesArray });
+    res.status(200).json({ id: productId, brand_id, category_id, name, price, image: typeof image === 'string' ? image : image.filename, image2: typeof image2 === 'string' ? image2 : image2.filename, available_sizes: sizesArray, description });
   } catch (error) {
     res.status(500).send({ error: 'Error actualizando la galería del producto', details: error });
   }
