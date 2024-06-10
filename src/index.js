@@ -21,6 +21,7 @@ const productsRouter = require('./routes/products');
 const brandsRouter = require('./routes/brands');
 const categoriesRouter = require('./routes/categories');
 const statisticsRouter = require('./routes/statistics');
+const paymentRoutes = require('./routes/payment'); // Importa las rutas de pago
 const colorsRouter = require('./routes/colors');
 const ordersRouter = require('./routes/orders');
 const notificationsRouter = require('./routes/notifications');
@@ -31,6 +32,7 @@ app.use('/api/products', productsRouter);
 app.use('/api/brands', brandsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/statistics', statisticsRouter);
+app.use('/api/payment', paymentRoutes); // Usa las rutas de pago
 app.use('/api/colors', colorsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/notifications', notificationsRouter);
