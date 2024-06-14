@@ -52,7 +52,7 @@ exports.getProductById = async (req, res) => {
   const productId = req.params.id;
   const queryProduct = 'SELECT * FROM products WHERE id = ?';
   const queryColors = `
-    SELECT pc.id as product_color_id, pc.color_id, pc.image, c.name as color_name, c.hex_code 
+    SELECT pc.id as product_color_id, pc.color_id, pc.image, c.name as color_name, c.hex_code, IFNULL(pc.sizes, '[]') as sizes
     FROM product_colors pc
     JOIN colors c ON pc.color_id = c.id
     WHERE pc.product_id = ?
@@ -63,24 +63,24 @@ exports.getProductById = async (req, res) => {
     JOIN product_colors pc ON pcg.product_color_id = pc.id
     WHERE pc.product_id = ?
   `;
+  const querySizes = `
+    SELECT pcs.size, pcs.product_color_id 
+    FROM product_color_sizes pcs
+    JOIN product_colors pc ON pcs.product_color_id = pc.id
+    WHERE pc.product_id = ?
+  `;
 
   try {
     const [productResults] = await pool.query(queryProduct, [productId]);
     if (productResults.length === 0) {
-      console.log("No se encontró el producto con el ID:", productId); // Añadir esta línea
-      return res.status(404).send({ error: 'Producto no encontrado productId' });
+      return res.status(404).send({ error: 'Producto no encontrado' });
     }
     const product = productResults[0];
-    try {
-      product.available_sizes = JSON.parse(product.available_sizes);
-    } catch (error) {
-      product.available_sizes = [];
-    }
 
     const [colorsResults] = await pool.query(queryColors, [productId]);
-    product.colors = colorsResults;
-
     const [galleryResults] = await pool.query(queryGallery, [productId]);
+    const [sizesResults] = await pool.query(querySizes, [productId]);
+
     const galleryImages = {};
     galleryResults.forEach(gallery => {
       if (!galleryImages[gallery.product_color_id]) {
@@ -88,9 +88,21 @@ exports.getProductById = async (req, res) => {
       }
       galleryImages[gallery.product_color_id].push(gallery.image);
     });
-    product.colors.forEach(color => {
-      color.galleryImages = galleryImages[color.product_color_id] || [];
+
+    const sizes = {};
+    sizesResults.forEach(size => {
+      if (!sizes[size.product_color_id]) {
+        sizes[size.product_color_id] = [];
+      }
+      sizes[size.product_color_id].push(size.size);
     });
+
+    product.colors = colorsResults.map(color => ({
+      ...color,
+      galleryImages: galleryImages[color.product_color_id] || [],
+      sizes: sizes[color.product_color_id] || []
+    }));
+
     res.status(200).json(product);
   } catch (error) {
     res.status(500).send({ error: 'Error obteniendo el producto', details: error });
@@ -98,7 +110,7 @@ exports.getProductById = async (req, res) => {
 };
 
 exports.createProduct = async (req, res) => {
-  const { brand_id, category_id, name, price, available_sizes, description } = req.body;
+  const { brand_id, category_id, name, price, description } = req.body;
   const image = req.files.find(file => file.fieldname === 'image');
   const image2 = req.files.find(file => file.fieldname === 'image2');
 
@@ -108,20 +120,14 @@ exports.createProduct = async (req, res) => {
 
   const colorsData = JSON.parse(req.body.colors);
 
-  let sizesArray = [];
+  const query = 'INSERT INTO products (brand_id, category_id, name, price, image, image2, description) VALUES (?, ?, ?, ?, ?, ?, ?)';
   try {
-    sizesArray = JSON.parse(available_sizes);
-  } catch (e) {
-    sizesArray = available_sizes.split(',').map(size => size.trim());
-  }
-
-  const query = 'INSERT INTO products (brand_id, category_id, name, price, image, image2, available_sizes, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-  try {
-    const [results] = await pool.query(query, [brand_id, category_id, name, price, image.filename, image2.filename, JSON.stringify(sizesArray), (description)]);
+    const [results] = await pool.query(query, [brand_id, category_id, name, price, image.filename, image2.filename, description]);
     const productId = results.insertId;
 
     const colorQueries = colorsData.map(color => {
       const colorImages = req.files.filter(file => file.fieldname.startsWith(`galleryImages_${color.id}`));
+      const sizes = color.sizes || [];
       const query = 'INSERT INTO product_colors (product_id, color_id, image) VALUES (?, ?, ?)';
       return new Promise((resolve, reject) => {
         const colorImage = colorImages.length > 0 ? colorImages[0].filename : null;
@@ -131,20 +137,27 @@ exports.createProduct = async (req, res) => {
             const galleryImages = colorImages.map(file => file.filename);
             const galleryQuery = 'INSERT INTO product_color_gallery (product_color_id, image) VALUES ?';
             const galleryValues = galleryImages.map(img => [productColorId, img]);
+            const sizeQuery = 'INSERT INTO product_color_sizes (product_color_id, size) VALUES ?';
+            const sizeValues = sizes.map(size => [productColorId, size]);
+
+            const queries = [];
             if (galleryValues.length > 0) {
-              pool.query(galleryQuery, [galleryValues])
-                .then(() => resolve())
-                .catch(err => reject(err));
-            } else {
-              resolve();
+              queries.push(pool.query(galleryQuery, [galleryValues]));
             }
+            if (sizeValues.length > 0) {
+              queries.push(pool.query(sizeQuery, [sizeValues]));
+            }
+
+            Promise.all(queries)
+              .then(() => resolve())
+              .catch(err => reject(err));
           })
           .catch(err => reject(err));
       });
     });
 
     await Promise.all(colorQueries);
-    res.status(201).json({ id: productId, brand_id, category_id, name, price, image: image.filename, image2: image2.filename, available_sizes: sizesArray, description });
+    res.status(201).json({ id: productId, brand_id, category_id, name, price, image: image.filename, image2: image2.filename, description });
   } catch (error) {
     console.error('Error creando el producto:', error);
     res.status(500).send({ error: 'Error creando el producto', details: error });
@@ -153,7 +166,7 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   const productId = req.params.id;
-  const { brand_id, category_id, name, price, available_sizes, description } = req.body;
+  const { brand_id, category_id, name, price, description } = req.body;
   const image = req.files.find(file => file.fieldname === 'image') || req.body.image;
   const image2 = req.files.find(file => file.fieldname === 'image2') || req.body.image2;
   const newGalleryImages = req.files.filter(file => file.fieldname.startsWith('galleryImages_')).map(file => file.filename);
@@ -170,16 +183,9 @@ exports.updateProduct = async (req, res) => {
     }
   }
 
-  let sizesArray = [];
+  const query = 'UPDATE products SET brand_id = ?, category_id = ?, name = ?, price = ?, image = ?, image2 = ?, description = ? WHERE id = ?';
   try {
-    sizesArray = JSON.parse(available_sizes);
-  } catch (e) {
-    sizesArray = available_sizes.split(',').map(size => size.trim());
-  }
-
-  const query = 'UPDATE products SET brand_id = ?, category_id = ?, name = ?, price = ?, image = ?, image2 = ?, available_sizes = ?, description = ? WHERE id = ?';
-  try {
-    const [results] = await pool.query(query, [brand_id, category_id, name, price, typeof image === 'string' ? image : image.filename, typeof image2 === 'string' ? image2 : image2.filename, JSON.stringify(sizesArray), description, productId]);
+    const [results] = await pool.query(query, [brand_id, category_id, name, price, typeof image === 'string' ? image : image.filename, typeof image2 === 'string' ? image2 : image2.filename, description, productId]);
     if (results.affectedRows === 0) {
       return res.status(404).send({ error: 'Producto no encontrado' });
     }
@@ -225,38 +231,70 @@ exports.updateProduct = async (req, res) => {
     });
 
     await Promise.all(galleryQueries);
-    res.status(200).json({ id: productId, brand_id, category_id, name, price, image: typeof image === 'string' ? image : image.filename, image2: typeof image2 === 'string' ? image2 : image2.filename, available_sizes: sizesArray, description });
+
+    const sizesQueries = colorIds.map((productColorId, index) => {
+      const color = colorsData[index];
+      const sizes = color.sizes || [];
+      if (productColorId) {
+        const deleteSizesQuery = 'DELETE FROM product_color_sizes WHERE product_color_id = ?';
+        const insertSizesQuery = 'INSERT INTO product_color_sizes (product_color_id, size) VALUES ?';
+        const sizesValues = sizes.map(size => [productColorId, size]);
+
+        return new Promise((resolve, reject) => {
+          pool.query(deleteSizesQuery, [productColorId])
+            .then(() => {
+              if (sizesValues.length > 0) {
+                pool.query(insertSizesQuery, [sizesValues])
+                  .then(() => resolve())
+                  .catch(err => reject(err));
+              } else {
+                resolve();
+              }
+            })
+            .catch(err => reject(err));
+        });
+      } else {
+        return Promise.resolve();
+      }
+    });
+
+    await Promise.all(sizesQueries);
+
+    res.status(200).json({ id: productId, brand_id, category_id, name, price, image: typeof image === 'string' ? image : image.filename, image2: typeof image2 === 'string' ? image2 : image2.filename, description });
   } catch (error) {
-    res.status(500).send({ error: 'Error actualizando la galería del producto', details: error });
+    console.error('Error actualizando el producto:', error);
+    res.status(500).send({ error: 'Error actualizando el producto', details: error });
   }
 };
 
 exports.deleteProduct = async (req, res) => {
   const productId = req.params.id;
 
+  console.log(`Intentando eliminar el producto con ID: ${productId}`);
+
   const queryGetProduct = 'SELECT image, image2 FROM products WHERE id = ?';
   try {
     const [results] = await pool.query(queryGetProduct, [productId]);
     if (results.length === 0) {
+      console.log(`Producto con ID: ${productId} no encontrado.`);
       return res.status(404).send({ error: 'Producto no encontrado' });
     }
     const product = results[0];
 
+    // Eliminar las imágenes del producto
     if (product.image) {
       const imagePath = path.join(__dirname, '../../uploads/products-images', product.image);
       if (fs.existsSync(imagePath)) {
-        fs.unlink(imagePath, (err) => {
-          if (err) console.error('Error eliminando la imagen del producto:', err);
-        });
+        console.log(`Eliminando imagen del producto: ${imagePath}`);
+        fs.unlinkSync(imagePath);
       }
     }
 
     if (product.image2) {
       const imagePath2 = path.join(__dirname, '../../uploads/products-images', product.image2);
       if (fs.existsSync(imagePath2)) {
-        fs.unlink(imagePath2, (err) => {
-          if (err) console.error('Error eliminando la segunda imagen del producto:', err);
-        });
+        console.log(`Eliminando segunda imagen del producto: ${imagePath2}`);
+        fs.unlinkSync(imagePath2);
       }
     }
 
@@ -267,27 +305,36 @@ exports.deleteProduct = async (req, res) => {
     galleryImages.forEach(image => {
       const galleryImagePath = path.join(__dirname, '../../uploads/product-gallery-images', image);
       if (fs.existsSync(galleryImagePath)) {
-        fs.unlink(galleryImagePath, (err) => {
-          if (err) console.error('Error eliminando la imagen de la galería:', err);
-        });
+        console.log(`Eliminando imagen de la galería del producto: ${galleryImagePath}`);
+        fs.unlinkSync(galleryImagePath);
       }
     });
 
+    console.log(`Eliminando tamaños de colores del producto con ID: ${productId}`);
+    const queryDeleteProductColorSizes = 'DELETE FROM product_color_sizes WHERE product_color_id IN (SELECT id FROM product_colors WHERE product_id = ?)';
+    await pool.query(queryDeleteProductColorSizes, [productId]);
+
+    console.log(`Eliminando galerías de colores del producto con ID: ${productId}`);
     const queryDeleteGallery = 'DELETE FROM product_color_gallery WHERE product_color_id IN (SELECT id FROM product_colors WHERE product_id = ?)';
     await pool.query(queryDeleteGallery, [productId]);
 
+    console.log(`Eliminando colores del producto con ID: ${productId}`);
     const queryDeleteProductColors = 'DELETE FROM product_colors WHERE product_id = ?';
     await pool.query(queryDeleteProductColors, [productId]);
 
+    console.log(`Eliminando el producto con ID: ${productId}`);
     const queryDeleteProduct = 'DELETE FROM products WHERE id = ?';
     const [deleteProductResults] = await pool.query(queryDeleteProduct, [productId]);
 
     if (deleteProductResults.affectedRows === 0) {
+      console.log(`Producto con ID: ${productId} no encontrado al intentar eliminar.`);
       return res.status(404).send({ error: 'Producto no encontrado' });
     }
 
+    console.log(`Producto con ID: ${productId} eliminado exitosamente.`);
     res.status(204).send();
   } catch (err) {
+    console.error('Error eliminando el producto:', err);
     res.status(500).send({ error: 'Error eliminando el producto', details: err });
   }
 };
